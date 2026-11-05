@@ -36,7 +36,11 @@ PHRASES = re.compile(
 
 def is_user_message(record: dict) -> bool:
     """Начинает ли запись новый ход: tool_result и тела навыков не начинают."""
-    if record.get("type") != "user" or record.get("isSidechain"):
+    if (
+        record.get("type") != "user"
+        or record.get("isSidechain")
+        or record.get("isCompactSummary")
+    ):
         return False
     # Сообщение другой сессии — isMeta с origin; тело навыка — isMeta без него.
     if record.get("isMeta") and not (
@@ -110,6 +114,11 @@ def without_quotes_and_code(text: str) -> str:
     return "\n".join(lines)
 
 
+def is_exempt(paragraph: str) -> bool:
+    """Начинается ли абзац с пометки исключения."""
+    return LEADING_MARKUP.sub("", paragraph, count=1).lower().startswith(EXEMPT)
+
+
 def question_paragraph(text: str) -> str | None:
     """Первый абзац с вопросом пользователю или None.
 
@@ -117,8 +126,7 @@ def question_paragraph(text: str) -> str | None:
     пустой строки: пересказ вопросов списком помечается один раз.
     """
     for block in re.split(r"\n\s*\n", without_quotes_and_code(text)):
-        start = LEADING_MARKUP.sub("", block, count=1).lower()
-        if start.startswith(EXEMPT):
+        if is_exempt(block):
             continue
         items: list[list[str]] = []
         for line in block.splitlines():
@@ -130,6 +138,8 @@ def question_paragraph(text: str) -> str | None:
                 items[-1].append(line.strip())
         for item in items:
             paragraph = " ".join(item)
+            if is_exempt(paragraph):
+                continue
             if QUESTION_END.search(paragraph) or PHRASES.search(paragraph):
                 return paragraph
     return None

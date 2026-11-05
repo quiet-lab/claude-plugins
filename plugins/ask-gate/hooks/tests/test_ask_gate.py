@@ -182,6 +182,20 @@ class TurnBoundary(unittest.TestCase):
         ]
         self.assertEqual(self.tail(records), ("итог", set()))
 
+    def test_compact_summary_does_not_start_turn(self):
+        summary = user("Сводка беседы") | {
+            "isCompactSummary": True,
+            "turnPosition": {"turnIndex": 2},
+        }
+        records = [
+            user("x"),
+            tool("AskUserQuestion"),
+            tool_result(),
+            summary,
+            text("итог"),
+        ]
+        self.assertEqual(self.tail(records), ("итог", {"AskUserQuestion"}))
+
     def test_sidechain_is_ignored(self):
         side = text("Вопрос субагента?") | {"isSidechain": True}
         self.assertEqual(self.tail([user("x"), text("итог"), side]), ("итог", set()))
@@ -270,6 +284,12 @@ class Paragraphs(unittest.TestCase):
         self.assert_no_question(
             "Вопрос не к вам, субагент спрашивает:\n- сливать?\n- удалять?"
         )
+
+    def test_exempt_mark_on_list_item(self):
+        self.assert_no_question(
+            "Итог:\n- сделано\n- Вопрос не к вам: субагент спрашивает, сливать?"
+        )
+        self.assert_question("Итог:\n- Вопрос не к вам: сливать?\n- удалять?")
 
     def test_exempt_mark_covers_only_its_paragraph(self):
         self.assert_question("Вопрос не к вам: сливать?\n\nА вам: удалять?")
