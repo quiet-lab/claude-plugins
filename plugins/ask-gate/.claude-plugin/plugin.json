@@ -1,6 +1,6 @@
 {
   "name": "ask-gate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Ворота вопросов пользователю: ход, закончившийся вопросом в прозе без AskUserQuestion, возвращается агенту один раз",
   "author": { "name": "quiet-lab" }
 }

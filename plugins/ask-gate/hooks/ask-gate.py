@@ -27,6 +27,12 @@ LIST_ITEM = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
 LEADING_MARKUP = re.compile(r"(?:\s|[*_]|(?:[-+]|\d+[.)])\s)*")
 EXEMPT = ("риторически:", "вопрос не к вам")
 QUESTION_END = re.compile(r"\?[!?]*[\s*_)\"»”’'\]]*$")
+# Знак вопроса в конце предложения: за ним пробел, закрывающая разметка или конец
+# абзаца; «a?b=1» в адресе не считается.
+QUESTION_MARK = re.compile(r"\?[!?]*[*_)\"»”’'\]]*(?:\s|$)")
+HEADING = re.compile(r"\s*#{1,6}(?:\s|$)")
+# Точки входа без интерактивного пользователя: claude -p даёт sdk-cli.
+NON_INTERACTIVE_ENTRYPOINT = "sdk"
 PHRASES = re.compile(
     r"что думаете|подтвердите|как поступить|оставить как есть"
     r"|\bили\b[^.!?]*\?",
@@ -55,16 +61,16 @@ def is_user_message(record: dict) -> bool:
     )
 
 
-def turn_tail(records) -> tuple[str | None, set[str]]:
-    """Текст конца хода и имена инструментов хода.
+def turn_tail(records) -> str | None:
+    """Текст конца хода; текст, после которого агент вызвал инструмент, не считается.
 
-    Текст, после которого агент вызвал инструмент, концом хода не считается.
+    Вызов AskUserQuestion проверку не снимает: текст после карточки, успешной
+    или с ошибкой схемы, остаётся концом хода и проверяется.
     """
     text: str | None = None
-    tools: set[str] = set()
     for record in records:
         if is_user_message(record):
-            text, tools = None, set()
+            text = None
         elif record.get("type") == "assistant" and not record.get("isSidechain"):
             content = (record.get("message") or {}).get("content")
             if not isinstance(content, list):
@@ -75,9 +81,8 @@ def turn_tail(records) -> tuple[str | None, set[str]]:
                 if block.get("type") == "text" and (block.get("text") or "").strip():
                     text = block["text"]
                 elif block.get("type") == "tool_use":
-                    tools.add(str(block.get("name")))
                     text = None
-    return text, tools
+    return text
 
 
 def read_records(path: str):
@@ -95,7 +100,7 @@ def read_records(path: str):
 
 
 def without_quotes_and_code(text: str) -> str:
-    """Цитаты, таблицы и блоки кода заменяются пустыми строками, код в строке — словом."""
+    """Цитаты, таблицы, заголовки и блоки кода заменяются пустыми строками, код в строке — словом."""
     lines = []
     fence = None
     for line in text.splitlines():
@@ -107,7 +112,7 @@ def without_quotes_and_code(text: str) -> str:
         elif match:
             fence = match.group(1)
             lines.append("")
-        elif line.lstrip().startswith((">", "|")):
+        elif line.lstrip().startswith((">", "|")) or HEADING.match(line):
             lines.append("")
         else:
             lines.append(INLINE_CODE.sub("код", line))
@@ -123,11 +128,13 @@ def question_paragraph(text: str) -> str | None:
     """Первый абзац с вопросом пользователю или None.
 
     Пункт списка — свой абзац, пометка исключения действует на весь блок до
-    пустой строки: пересказ вопросов списком помечается один раз.
+    пустой строки: пересказ вопросов списком помечается один раз. Вопросом
+    считается абзац, оканчивающийся знаком `?` или содержащий оборот; в последнем
+    абзаце хода — любое предложение со знаком `?`.
     """
+    paragraphs: list[tuple[str, bool]] = []
     for block in re.split(r"\n\s*\n", without_quotes_and_code(text)):
-        if is_exempt(block):
-            continue
+        block_exempt = is_exempt(block)
         items: list[list[str]] = []
         for line in block.splitlines():
             if not line.strip():
@@ -138,10 +145,17 @@ def question_paragraph(text: str) -> str | None:
                 items[-1].append(line.strip())
         for item in items:
             paragraph = " ".join(item)
-            if is_exempt(paragraph):
-                continue
-            if QUESTION_END.search(paragraph) or PHRASES.search(paragraph):
-                return paragraph
+            paragraphs.append((paragraph, block_exempt or is_exempt(paragraph)))
+    for index, (paragraph, exempt) in enumerate(paragraphs):
+        if exempt:
+            continue
+        last = index == len(paragraphs) - 1
+        if (
+            QUESTION_END.search(paragraph)
+            or PHRASES.search(paragraph)
+            or (last and QUESTION_MARK.search(paragraph))
+        ):
+            return paragraph
     return None
 
 
@@ -149,12 +163,16 @@ def decide(hook_input: dict) -> str | None:
     """Причина отказа или None, если ход можно завершить."""
     if hook_input.get("stop_hook_active") or os.environ.get("DUTY_ROLE") == "worker":
         return None
-    text, tools = turn_tail(read_records(hook_input["transcript_path"]))
+    # Под claude -p и SDK нет пользователя и карточки: возврат хода подменил бы ответ.
+    entrypoint = os.environ.get("CLAUDE_CODE_ENTRYPOINT", "")
+    if entrypoint.startswith(NON_INTERACTIVE_ENTRYPOINT):
+        return None
+    text = turn_tail(read_records(hook_input["transcript_path"]))
     # На момент Stop последнее сообщение агента в транскрипт ещё не записано.
     last_message = hook_input.get("last_assistant_message")
     if isinstance(last_message, str):
         text = last_message
-    if not text or "AskUserQuestion" in tools or not question_paragraph(text):
+    if not text or not question_paragraph(text):
         return None
     return REASON
 

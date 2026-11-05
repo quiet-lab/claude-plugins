@@ -37,7 +37,14 @@ def tool(name):
 
 
 def run_hook(
-    records, *, env_role=None, raw_input=None, active=False, tail="", last_message=None
+    records,
+    *,
+    env_role=None,
+    raw_input=None,
+    active=False,
+    tail="",
+    last_message=None,
+    entrypoint=None,
 ):
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "t.jsonl"
@@ -50,7 +57,13 @@ def run_hook(
         }
         if last_message is not None:
             hook_input["last_assistant_message"] = last_message
-        env = {k: v for k, v in os.environ.items() if k != "DUTY_ROLE"}
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("DUTY_ROLE", "CLAUDE_CODE_ENTRYPOINT")
+        }
+        if entrypoint:
+            env["CLAUDE_CODE_ENTRYPOINT"] = entrypoint
         if env_role:
             env["DUTY_ROLE"] = env_role
         return subprocess.run(
@@ -78,14 +91,31 @@ class HookRun(unittest.TestCase):
     def test_prose_question_blocks(self):
         self.assertTrue(blocked([user("как дела"), text("Сделано.\n\nСливать ветвь?")]))
 
-    def test_ask_user_question_in_turn_passes(self):
+    def test_prose_after_successful_ask_user_question_blocks(self):
         records = [
             user("x"),
             tool("AskUserQuestion"),
             tool_result(),
             text("Какой вариант?"),
         ]
+        self.assertTrue(blocked(records))
+
+    def test_prose_after_failed_ask_user_question_blocks(self):
+        failed = tool_result()
+        failed["message"]["content"][0]["is_error"] = True
+        records = [user("x"), tool("AskUserQuestion"), failed, text("Какой вариант?")]
+        self.assertTrue(blocked(records))
+
+    def test_statement_after_ask_user_question_passes(self):
+        records = [user("x"), tool("AskUserQuestion"), tool_result(), text("Принято.")]
         self.assertFalse(blocked(records))
+
+    def test_non_interactive_entrypoints_pass(self):
+        records = [user("x"), text("Сливать ветвь?")]
+        for entrypoint in ("sdk-cli", "sdk-py", "sdk-ts"):
+            self.assertFalse(blocked(records, entrypoint=entrypoint), entrypoint)
+        for entrypoint in ("cli", "claude-vscode"):
+            self.assertTrue(blocked(records, entrypoint=entrypoint), entrypoint)
 
     def test_ask_user_question_of_previous_turn_does_not_count(self):
         records = [
@@ -135,9 +165,9 @@ class LastMessageField(unittest.TestCase):
     def test_empty_field_passes(self):
         self.assertFalse(blocked([user("x"), text("Проверить?")], last_message=""))
 
-    def test_ask_user_question_in_transcript_passes(self):
+    def test_ask_user_question_in_transcript_does_not_exempt_field(self):
         records = [user("x"), tool("AskUserQuestion"), tool_result()]
-        self.assertFalse(blocked(records, last_message="Какой вариант?"))
+        self.assertTrue(blocked(records, last_message="Какой вариант?"))
 
 
 class TurnBoundary(unittest.TestCase):
@@ -146,7 +176,7 @@ class TurnBoundary(unittest.TestCase):
 
     def test_tool_result_is_not_user_message(self):
         records = [user("x"), tool("Bash"), tool_result(), text("итог")]
-        self.assertEqual(self.tail(records), ("итог", {"Bash"}))
+        self.assertEqual(self.tail(records), "итог")
 
     def test_user_text_blocks_start_turn(self):
         records = [
@@ -155,7 +185,7 @@ class TurnBoundary(unittest.TestCase):
             user([{"type": "text", "text": "y"}]),
             text("итог"),
         ]
-        self.assertEqual(self.tail(records), ("итог", set()))
+        self.assertEqual(self.tail(records), "итог")
 
     def test_skill_body_does_not_start_turn(self):
         skill = user("Base directory for this skill: ...") | {"isMeta": True}
@@ -166,7 +196,7 @@ class TurnBoundary(unittest.TestCase):
             skill,
             text("итог"),
         ]
-        self.assertEqual(self.tail(records), ("итог", {"AskUserQuestion"}))
+        self.assertEqual(self.tail(records), "итог")
 
     def test_peer_message_starts_turn(self):
         peer = user("Another Claude session sent a message") | {
@@ -180,7 +210,7 @@ class TurnBoundary(unittest.TestCase):
             peer,
             text("итог"),
         ]
-        self.assertEqual(self.tail(records), ("итог", set()))
+        self.assertEqual(self.tail(records), "итог")
 
     def test_compact_summary_does_not_start_turn(self):
         summary = user("Сводка беседы") | {
@@ -194,16 +224,16 @@ class TurnBoundary(unittest.TestCase):
             summary,
             text("итог"),
         ]
-        self.assertEqual(self.tail(records), ("итог", {"AskUserQuestion"}))
+        self.assertEqual(self.tail(records), "итог")
 
     def test_sidechain_is_ignored(self):
         side = text("Вопрос субагента?") | {"isSidechain": True}
-        self.assertEqual(self.tail([user("x"), text("итог"), side]), ("итог", set()))
+        self.assertEqual(self.tail([user("x"), text("итог"), side]), "итог")
 
     def test_text_before_tool_call_is_not_turn_end(self):
         self.assertEqual(
             self.tail([user("x"), text("Проверить?"), tool("Bash"), tool_result()]),
-            (None, {"Bash"}),
+            None,
         )
 
     def test_only_last_text_counts(self):
@@ -231,7 +261,31 @@ class Paragraphs(unittest.TestCase):
         self.assert_question("Сливать сейчас?!")
 
     def test_question_in_the_middle_of_paragraph_does_not_count(self):
-        self.assert_no_question("Почему упало? Причина в таймауте, поправлено.")
+        self.assert_no_question("Почему упало? Причина в таймауте.\n\nПоправлено.")
+
+    def test_question_followed_by_text_in_last_paragraph_counts(self):
+        for value in (
+            "Сливать? Рекомендую да.",
+            "Какой вариант? Варианты: первый, второй.",
+            "Готово.\n\nСливать ветвь? Рекомендую слить.",
+            "Выбор:\n- первый\n- Удалять? Лучше нет.",
+        ):
+            self.assert_question(value)
+
+    def test_url_with_query_does_not_count(self):
+        self.assert_no_question("Страница https://x.y/a?b=1 открыта.")
+
+    def test_exempt_last_paragraph_with_followup_text(self):
+        self.assert_no_question("Итог.\n\nВопрос не к вам: сливать? Решает владелец.")
+
+    def test_headings_do_not_count(self):
+        for value in (
+            "## Почему упало?",
+            "Итог.\n\n## Что дальше?\n\nЖдём результата.",
+            "# Сливать?",
+            "Итог готов.\n\n### Причина? Таймаут",
+        ):
+            self.assert_no_question(value)
 
     def test_phrases(self):
         for value in (
