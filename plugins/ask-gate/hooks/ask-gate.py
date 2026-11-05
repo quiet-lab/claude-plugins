@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Хук Stop: вопрос пользователю в прозе без AskUserQuestion возвращается агенту.
 
 Вход — JSON хука на stdin. Вывод — решение block либо ничего; код всегда 0:
@@ -153,7 +152,7 @@ def decide(hook_input: dict) -> str | None:
 def main() -> int:
     try:
         reason = decide(json.load(sys.stdin))
-    except Exception:
+    except Exception:  # noqa: BLE001 — сбой хука не должен мешать завершению хода
         return 0
     if reason:
         print(json.dumps({"decision": "block", "reason": reason}))
