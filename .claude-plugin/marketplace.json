@@ -1,0 +1,17 @@
+{
+  "name": "quiet-lab",
+  "owner": { "name": "quiet-lab" },
+  "metadata": { "description": "Плагины Claude Code: handoff и duty" },
+  "plugins": [
+    {
+      "name": "handoff",
+      "source": "./plugins/handoff",
+      "description": "Передача незавершённой работы между сессиями: навык /handoff и хук session-handoff.sh"
+    },
+    {
+      "name": "duty",
+      "source": { "source": "github", "repo": "quiet-lab/duty" },
+      "description": "Дежурство по проекту: инспекция, вынос задач в workspace herdr, рутина субагентами на дешёвых моделях"
+    }
+  ]
+}

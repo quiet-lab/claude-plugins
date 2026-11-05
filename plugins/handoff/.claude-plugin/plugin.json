@@ -1,0 +1,6 @@
+{
+  "name": "handoff",
+  "version": "0.1.0",
+  "description": "Передача незавершённой работы между сессиями: навык /handoff и хук session-handoff.sh",
+  "author": { "name": "quiet-lab" }
+}
