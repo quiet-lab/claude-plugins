@@ -5,6 +5,7 @@
 | Плагин | Что делает | Источник |
 |---|---|---|
 | `handoff` | передача работы между сессиями: навык `/handoff`, хук `session-handoff.sh` | `plugins/handoff/` |
+| `ask-gate` | ворота вопросов: вопрос пользователю в прозе без `AskUserQuestion` возвращается агенту | `plugins/ask-gate/` |
 | `duty` | дежурство по проекту: инспекция, workspace herdr, рутина субагентами | GitHub `quiet-lab/duty` (зеркало) |
 
 ## Подключение
@@ -12,6 +13,7 @@
 ```sh
 claude plugin marketplace add quiet-lab/claude-plugins
 claude plugin install handoff@quiet-lab
+claude plugin install ask-gate@quiet-lab
 claude plugin install duty@quiet-lab
 ```
 

@@ -1,12 +1,17 @@
 {
   "name": "quiet-lab",
   "owner": { "name": "quiet-lab" },
-  "metadata": { "description": "Плагины Claude Code: handoff и duty" },
+  "metadata": { "description": "Плагины Claude Code: handoff, ask-gate и duty" },
   "plugins": [
     {
       "name": "handoff",
       "source": "./plugins/handoff",
       "description": "Передача незавершённой работы между сессиями: навык /handoff и хук session-handoff.sh"
+    },
+    {
+      "name": "ask-gate",
+      "source": "./plugins/ask-gate",
+      "description": "Ворота вопросов пользователю: ход, закончившийся вопросом в прозе без AskUserQuestion, возвращается агенту один раз"
     },
     {
       "name": "duty",

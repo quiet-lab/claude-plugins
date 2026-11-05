@@ -1,0 +1,16 @@
+{
+  "description": "При остановке хода: вопрос пользователю в прозе без AskUserQuestion возвращается агенту",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "exec python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/ask-gate.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
