@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -23,7 +24,7 @@ REASON = (
 # занимают основную часть файла и не разбираются.
 RECORD_TYPE = re.compile(rb'"type"\s*:\s*"(?:user|assistant)"')
 # Ограда блока кода: три и более одинаковых символа, далее строка сведений.
-FENCE = re.compile(r"\s*(`{3,}|~{3,})(.*)$")
+FENCE = re.compile(r"([ \t]*)((?:[-*+]|\d+[.)])[ \t]+)?(`{3,}|~{3,})(.*)$")
 INLINE_CODE = re.compile(r"`[^`\n]*`")
 LIST_ITEM = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
 # Разметка перед началом абзаца: маркер списка, выделение.
@@ -106,22 +107,37 @@ def without_quotes_and_code(text: str) -> str:
     """Цитаты, таблицы, заголовки и блоки кода заменяются пустыми строками, код в строке — словом."""
     lines = []
     fence = None
+    fence_in_list = False
     for line in text.splitlines():
         match = FENCE.match(line)
-        if match and match.group(1)[0] == "`" and "`" in match.group(2):
-            match = None  # «```x```» в строке — код в строке, не ограда
-        if fence:
-            # Закрывает строка только из символов ограды не короче открывающей.
+        if match:
+            indent, marker, run, info = match.groups()
+            # Отступ в 4 и более знака — блок кода по отступу, не ограда; «```x```»
+            # в строке — код в строке.
             if (
-                match
-                and not match.group(2).strip()
-                and match.group(1)[0] == fence[0]
-                and len(match.group(1)) >= len(fence)
+                len(indent.expandtabs(4)) > 3
+                and not fence_in_list
+                or run[0] == "`"
+                and "`" in info
             ):
-                fence = None
+                match = None
+        if fence:
+            # Закрывает строка без маркера и сведений из символов ограды не короче
+            # открывающей; ограда внутри пункта списка может быть с любым отступом.
+            if match:
+                indent, marker, run, info = match.groups()
+                if (
+                    not marker
+                    and not info.strip()
+                    and run[0] == fence[0]
+                    and len(run) >= len(fence)
+                    and (fence_in_list or len(indent.expandtabs(4)) <= 3)
+                ):
+                    fence = None
             lines.append("")
         elif match:
-            fence = match.group(1)
+            fence = match.group(3)
+            fence_in_list = bool(match.group(2))
             lines.append("")
         elif line.lstrip().startswith((">", "|")) or HEADING.match(line):
             lines.append("")
@@ -194,7 +210,11 @@ def main() -> int:
         reason = decide(json.load(sys.stdin))
         if reason:
             print(json.dumps({"decision": "block", "reason": reason}))
+            sys.stdout.flush()
     except Exception:  # noqa: BLE001 — сбой хука не должен мешать завершению хода
+        # Остаток буфера при выходе интерпретатора не должен давать код 120.
+        with contextlib.suppress(Exception):
+            os.dup2(os.open(os.devnull, os.O_WRONLY), 1)
         return 0
     return 0
 

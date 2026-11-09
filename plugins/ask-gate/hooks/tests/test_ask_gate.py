@@ -153,6 +153,8 @@ class HookRun(unittest.TestCase):
 
 
 class LastMessageField(unittest.TestCase):
+    """Последнее сообщение приходит полем входа: в транскрипт оно ещё не записано."""
+
     def test_transcript_not_read_when_field_is_set(self):
         with tempfile.TemporaryDirectory() as tmp:
             hook_input = {
@@ -166,6 +168,28 @@ class LastMessageField(unittest.TestCase):
             }
             with unittest.mock.patch.dict(os.environ, env, clear=True):
                 self.assertTrue(ask_gate.decide(hook_input))
+
+    def test_unwritable_stdout_exits_zero(self):
+        hook_input = {
+            "transcript_path": "/x",
+            "last_assistant_message": "Сливать ветвь?",
+        }
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("DUTY_ROLE", "CLAUDE_CODE_ENTRYPOINT")
+        }
+        with open("/dev/full", "w", encoding="utf-8") as full:
+            done = subprocess.run(
+                [sys.executable, "-I", str(SCRIPT)],
+                input=json.dumps(hook_input),
+                text=True,
+                stdout=full,
+                stderr=subprocess.DEVNULL,
+                env=env,
+                check=False,
+            )
+        self.assertEqual(done.returncode, 0)
 
     def test_question_only_in_field_blocks(self):
         self.assertTrue(blocked([user("x")], last_message="Сливать ветвь?"))
@@ -339,6 +363,13 @@ class Paragraphs(unittest.TestCase):
         self.assert_no_question(
             "Итог.\n\n````md\n```sh\nудалить?\n```\n````\n\nГотово."
         )
+
+    def test_fence_after_list_marker(self):
+        self.assert_question("Шаги:\n\n- ```sh\n  ls\n  ```\n\nСливать ветвь?")
+        self.assert_no_question("Шаги:\n\n- ```sh\n  ls -d */?\n  ```\n\nГотово.")
+
+    def test_indented_fence_is_not_fence(self):
+        self.assert_question("Код:\n\n    ```\n    rm?\n\nСливать?")
 
     def test_inline_triple_backticks_is_not_fence(self):
         self.assert_question("```x``` сливать?\n\nЕщё: удалять?")
