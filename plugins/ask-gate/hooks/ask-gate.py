@@ -4,6 +4,9 @@
 сбой хука не должен мешать завершению хода. Порядок — README плагина.
 """
 
+from __future__ import annotations
+
+import contextlib
 import json
 import os
 import re
@@ -20,7 +23,8 @@ REASON = (
 # Строка записи о сообщении; остальные записи (тела запросов к API и служебные)
 # занимают основную часть файла и не разбираются.
 RECORD_TYPE = re.compile(rb'"type"\s*:\s*"(?:user|assistant)"')
-FENCE = re.compile(r"\s*(```|~~~)")
+# Ограда блока кода: три и более одинаковых символа, далее строка сведений.
+FENCE = re.compile(r"([ \t]*)((?:[-*+]|\d+[.)])[ \t]+)?(`{3,}|~{3,})(.*)$")
 INLINE_CODE = re.compile(r"`[^`\n]*`")
 LIST_ITEM = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
 # Разметка перед началом абзаца: маркер списка, выделение.
@@ -103,14 +107,37 @@ def without_quotes_and_code(text: str) -> str:
     """Цитаты, таблицы, заголовки и блоки кода заменяются пустыми строками, код в строке — словом."""
     lines = []
     fence = None
+    fence_in_list = False
     for line in text.splitlines():
         match = FENCE.match(line)
+        if match:
+            indent, marker, run, info = match.groups()
+            # Отступ в 4 и более знака — блок кода по отступу, не ограда; «```x```»
+            # в строке — код в строке.
+            if (
+                len(indent.expandtabs(4)) > 3
+                and not fence_in_list
+                or run[0] == "`"
+                and "`" in info
+            ):
+                match = None
         if fence:
-            if match and match.group(1) == fence:
-                fence = None
+            # Закрывает строка без маркера и сведений из символов ограды не короче
+            # открывающей; ограда внутри пункта списка может быть с любым отступом.
+            if match:
+                indent, marker, run, info = match.groups()
+                if (
+                    not marker
+                    and not info.strip()
+                    and run[0] == fence[0]
+                    and len(run) >= len(fence)
+                    and (fence_in_list or len(indent.expandtabs(4)) <= 3)
+                ):
+                    fence = None
             lines.append("")
         elif match:
-            fence = match.group(1)
+            fence = match.group(3)
+            fence_in_list = bool(match.group(2))
             lines.append("")
         elif line.lstrip().startswith((">", "|")) or HEADING.match(line):
             lines.append("")
@@ -167,11 +194,12 @@ def decide(hook_input: dict) -> str | None:
     entrypoint = os.environ.get("CLAUDE_CODE_ENTRYPOINT", "")
     if entrypoint.startswith(NON_INTERACTIVE_ENTRYPOINT):
         return None
-    text = turn_tail(read_records(hook_input["transcript_path"]))
     # На момент Stop последнее сообщение агента в транскрипт ещё не записано.
     last_message = hook_input.get("last_assistant_message")
     if isinstance(last_message, str):
-        text = last_message
+        text: str | None = last_message
+    else:
+        text = turn_tail(read_records(hook_input["transcript_path"]))
     if not text or not question_paragraph(text):
         return None
     return REASON
@@ -180,10 +208,14 @@ def decide(hook_input: dict) -> str | None:
 def main() -> int:
     try:
         reason = decide(json.load(sys.stdin))
+        if reason:
+            print(json.dumps({"decision": "block", "reason": reason}))
+            sys.stdout.flush()
     except Exception:  # noqa: BLE001 — сбой хука не должен мешать завершению хода
+        # Остаток буфера при выходе интерпретатора не должен давать код 120.
+        with contextlib.suppress(Exception):
+            os.dup2(os.open(os.devnull, os.O_WRONLY), 1)
         return 0
-    if reason:
-        print(json.dumps({"decision": "block", "reason": reason}))
     return 0
 
 
