@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent.parent / "ask-gate.py"
@@ -152,7 +153,19 @@ class HookRun(unittest.TestCase):
 
 
 class LastMessageField(unittest.TestCase):
-    """Последнее сообщение приходит полем входа: в транскрипт оно ещё не записано."""
+    def test_transcript_not_read_when_field_is_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hook_input = {
+                "transcript_path": str(Path(tmp) / "absent.jsonl"),
+                "last_assistant_message": "Сливать?",
+            }
+            env = {
+                k: v
+                for k, v in os.environ.items()
+                if k not in ("DUTY_ROLE", "CLAUDE_CODE_ENTRYPOINT")
+            }
+            with unittest.mock.patch.dict(os.environ, env, clear=True):
+                self.assertTrue(ask_gate.decide(hook_input))
 
     def test_question_only_in_field_blocks(self):
         self.assertTrue(blocked([user("x")], last_message="Сливать ветвь?"))
@@ -321,6 +334,14 @@ class Paragraphs(unittest.TestCase):
             "Команда:\n\n```sh\ntest -f a || echo нет?\nчто думаете\n```\n\nГотово."
         )
         self.assert_no_question("Команда:\n```\nудалить?\n")
+
+    def test_long_fence_closes_only_by_matching_line(self):
+        self.assert_no_question(
+            "Итог.\n\n````md\n```sh\nудалить?\n```\n````\n\nГотово."
+        )
+
+    def test_inline_triple_backticks_is_not_fence(self):
+        self.assert_question("```x``` сливать?\n\nЕщё: удалять?")
 
     def test_inline_code_does_not_count(self):
         self.assert_no_question("Регулярка `a?`")

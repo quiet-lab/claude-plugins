@@ -4,6 +4,8 @@
 сбой хука не должен мешать завершению хода. Порядок — README плагина.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -20,7 +22,8 @@ REASON = (
 # Строка записи о сообщении; остальные записи (тела запросов к API и служебные)
 # занимают основную часть файла и не разбираются.
 RECORD_TYPE = re.compile(rb'"type"\s*:\s*"(?:user|assistant)"')
-FENCE = re.compile(r"\s*(```|~~~)")
+# Ограда блока кода: три и более одинаковых символа, далее строка сведений.
+FENCE = re.compile(r"\s*(`{3,}|~{3,})(.*)$")
 INLINE_CODE = re.compile(r"`[^`\n]*`")
 LIST_ITEM = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
 # Разметка перед началом абзаца: маркер списка, выделение.
@@ -105,8 +108,16 @@ def without_quotes_and_code(text: str) -> str:
     fence = None
     for line in text.splitlines():
         match = FENCE.match(line)
+        if match and match.group(1)[0] == "`" and "`" in match.group(2):
+            match = None  # «```x```» в строке — код в строке, не ограда
         if fence:
-            if match and match.group(1) == fence:
+            # Закрывает строка только из символов ограды не короче открывающей.
+            if (
+                match
+                and not match.group(2).strip()
+                and match.group(1)[0] == fence[0]
+                and len(match.group(1)) >= len(fence)
+            ):
                 fence = None
             lines.append("")
         elif match:
@@ -167,11 +178,12 @@ def decide(hook_input: dict) -> str | None:
     entrypoint = os.environ.get("CLAUDE_CODE_ENTRYPOINT", "")
     if entrypoint.startswith(NON_INTERACTIVE_ENTRYPOINT):
         return None
-    text = turn_tail(read_records(hook_input["transcript_path"]))
     # На момент Stop последнее сообщение агента в транскрипт ещё не записано.
     last_message = hook_input.get("last_assistant_message")
     if isinstance(last_message, str):
-        text = last_message
+        text: str | None = last_message
+    else:
+        text = turn_tail(read_records(hook_input["transcript_path"]))
     if not text or not question_paragraph(text):
         return None
     return REASON
@@ -180,10 +192,10 @@ def decide(hook_input: dict) -> str | None:
 def main() -> int:
     try:
         reason = decide(json.load(sys.stdin))
+        if reason:
+            print(json.dumps({"decision": "block", "reason": reason}))
     except Exception:  # noqa: BLE001 — сбой хука не должен мешать завершению хода
         return 0
-    if reason:
-        print(json.dumps({"decision": "block", "reason": reason}))
     return 0
 
 
