@@ -17,6 +17,15 @@ ask_gate = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ask_gate)
 
 
+def clean_env():
+    """Окружение без переменных, по которым хук пропускает ход."""
+    return {
+        k: v
+        for k, v in os.environ.items()
+        if k not in ("DUTY_ROLE", "CLAUDE_CODE_ENTRYPOINT")
+    }
+
+
 def user(content):
     return {"type": "user", "message": {"role": "user", "content": content}}
 
@@ -58,11 +67,7 @@ def run_hook(
         }
         if last_message is not None:
             hook_input["last_assistant_message"] = last_message
-        env = {
-            k: v
-            for k, v in os.environ.items()
-            if k not in ("DUTY_ROLE", "CLAUDE_CODE_ENTRYPOINT")
-        }
+        env = clean_env()
         if entrypoint:
             env["CLAUDE_CODE_ENTRYPOINT"] = entrypoint
         if env_role:
@@ -161,12 +166,7 @@ class LastMessageField(unittest.TestCase):
                 "transcript_path": str(Path(tmp) / "absent.jsonl"),
                 "last_assistant_message": "Сливать?",
             }
-            env = {
-                k: v
-                for k, v in os.environ.items()
-                if k not in ("DUTY_ROLE", "CLAUDE_CODE_ENTRYPOINT")
-            }
-            with unittest.mock.patch.dict(os.environ, env, clear=True):
+            with unittest.mock.patch.dict(os.environ, clean_env(), clear=True):
                 self.assertTrue(ask_gate.decide(hook_input))
 
     def test_unwritable_stdout_exits_zero(self):
@@ -174,11 +174,7 @@ class LastMessageField(unittest.TestCase):
             "transcript_path": "/x",
             "last_assistant_message": "Сливать ветвь?",
         }
-        env = {
-            k: v
-            for k, v in os.environ.items()
-            if k not in ("DUTY_ROLE", "CLAUDE_CODE_ENTRYPOINT")
-        }
+        env = clean_env()
         with open("/dev/full", "w", encoding="utf-8") as full:
             done = subprocess.run(
                 [sys.executable, "-I", str(SCRIPT)],
