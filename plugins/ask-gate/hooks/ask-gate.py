@@ -41,7 +41,7 @@ PHRASES = re.compile(
     r"что думаете|как поступить|\bили\b[^.!?]*\?",
     re.IGNORECASE,
 )
-# Обороты, которые бывают и утверждением: вопрос только со знаком «?» в абзаце.
+# Обороты, которые бывают и утверждением: вопрос только со знаком «?» (QUESTION_MARK) в абзаце.
 PHRASES_WITH_MARK = re.compile(r"подтвердите|оставить как есть", re.IGNORECASE)
 
 
@@ -182,7 +182,7 @@ def question_paragraph(text: str) -> str | None:
         if (
             QUESTION_END.search(paragraph)
             or PHRASES.search(paragraph)
-            or ("?" in paragraph and PHRASES_WITH_MARK.search(paragraph))
+            or (QUESTION_MARK.search(paragraph) and PHRASES_WITH_MARK.search(paragraph))
             or (last and QUESTION_MARK.search(paragraph))
         ):
             return paragraph
