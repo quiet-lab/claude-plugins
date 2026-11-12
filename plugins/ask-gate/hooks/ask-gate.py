@@ -38,10 +38,11 @@ HEADING = re.compile(r"\s*#{1,6}(?:\s|$)")
 # Точки входа без интерактивного пользователя: claude -p даёт sdk-cli.
 NON_INTERACTIVE_ENTRYPOINT = "sdk"
 PHRASES = re.compile(
-    r"что думаете|подтвердите|как поступить|оставить как есть"
-    r"|\bили\b[^.!?]*\?",
+    r"что думаете|как поступить|\bили\b[^.!?]*\?",
     re.IGNORECASE,
 )
+# Обороты, которые бывают и утверждением: вопрос только со знаком «?» в абзаце.
+PHRASES_WITH_MARK = re.compile(r"подтвердите|оставить как есть", re.IGNORECASE)
 
 
 def is_user_message(record: dict) -> bool:
@@ -156,7 +157,8 @@ def question_paragraph(text: str) -> str | None:
 
     Пункт списка — свой абзац, пометка исключения действует на весь блок до
     пустой строки: пересказ вопросов списком помечается один раз. Вопросом
-    считается абзац, оканчивающийся знаком `?` или содержащий оборот; в последнем
+    считается абзац, оканчивающийся знаком `?` или содержащий оборот
+    («подтвердите» и «оставить как есть» — со знаком `?` в абзаце); в последнем
     абзаце хода — любое предложение со знаком `?`.
     """
     paragraphs: list[tuple[str, bool]] = []
@@ -180,6 +182,7 @@ def question_paragraph(text: str) -> str | None:
         if (
             QUESTION_END.search(paragraph)
             or PHRASES.search(paragraph)
+            or ("?" in paragraph and PHRASES_WITH_MARK.search(paragraph))
             or (last and QUESTION_MARK.search(paragraph))
         ):
             return paragraph

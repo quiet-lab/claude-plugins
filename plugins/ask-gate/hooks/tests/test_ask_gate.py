@@ -327,12 +327,22 @@ class Paragraphs(unittest.TestCase):
     def test_phrases(self):
         for value in (
             "Вот предложение. Что думаете.",
-            "Подтвердите слияние.",
             "Не знаю, как поступить с веткой.",
-            "Можно отвечать «оставить как есть».",
+            "Подтвердите: сливать?",
+            "Оставить как есть или переписать?",
+            "Подтвердите слияние, иначе подожду? Жду.",
             "Сливать сейчас или после ревью? Иначе подожду.",
         ):
             self.assert_question(value)
+
+    def test_confirm_and_keep_phrases_need_question_mark_in_paragraph(self):
+        for value in (
+            "Решено оставить как есть.",
+            "Подтвердите вход в окне sudo.",
+            "Подтвердите вход в окне sudo.\n\nПочему упало? Таймаут.\n\nГотово.",
+            "Можно отвечать «оставить как есть».",
+        ):
+            self.assert_no_question(value)
 
     def test_or_without_question_mark_does_not_count(self):
         self.assert_no_question(
