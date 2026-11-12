@@ -76,6 +76,8 @@
 
 ## Установка
 
+Минимальная версия Python — 3.14.
+
 ```sh
 claude plugin marketplace add quiet-lab/claude-plugins
 claude plugin install ask-gate@quiet-lab
