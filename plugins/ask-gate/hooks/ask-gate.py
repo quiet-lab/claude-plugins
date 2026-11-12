@@ -104,41 +104,54 @@ def read_records(path: str):
                 yield record
 
 
+def parse_fence(line: str, fence_in_list: bool):
+    """Группы ограды (отступ, маркер списка, символы ограды, сведения) или None.
+
+    Все правила ограды в одном месте: образец FENCE находит кандидата, здесь
+    отбрасываются отступ в 4 и более знака вне пункта списка (блок кода
+    по отступу) и «```x```» в строке (код в строке).
+    """
+    match = FENCE.match(line)
+    if not match:
+        return None
+    indent, _marker, run, info = match.groups()
+    if len(indent.expandtabs(4)) > 3 and not fence_in_list:
+        return None
+    if run[0] == "`" and "`" in info:
+        return None
+    return match.groups()
+
+
+def closes_fence(groups, fence: str, fence_in_list: bool) -> bool:
+    """Закрывает ли ограда `groups` блок, открытый оградой `fence`.
+
+    Закрывает строка без маркера и сведений из символов ограды не короче
+    открывающей; ограда внутри пункта списка может быть с любым отступом.
+    """
+    indent, marker, run, info = groups
+    return (
+        not marker
+        and not info.strip()
+        and run[0] == fence[0]
+        and len(run) >= len(fence)
+        and (fence_in_list or len(indent.expandtabs(4)) <= 3)
+    )
+
+
 def without_quotes_and_code(text: str) -> str:
     """Цитаты, таблицы, заголовки и блоки кода заменяются пустыми строками, код в строке — словом."""
     lines = []
     fence = None
     fence_in_list = False
     for line in text.splitlines():
-        match = FENCE.match(line)
-        if match:
-            indent, marker, run, info = match.groups()
-            # Отступ в 4 и более знака — блок кода по отступу, не ограда; «```x```»
-            # в строке — код в строке.
-            if (
-                len(indent.expandtabs(4)) > 3
-                and not fence_in_list
-                or run[0] == "`"
-                and "`" in info
-            ):
-                match = None
+        groups = parse_fence(line, fence_in_list)
         if fence:
-            # Закрывает строка без маркера и сведений из символов ограды не короче
-            # открывающей; ограда внутри пункта списка может быть с любым отступом.
-            if match:
-                indent, marker, run, info = match.groups()
-                if (
-                    not marker
-                    and not info.strip()
-                    and run[0] == fence[0]
-                    and len(run) >= len(fence)
-                    and (fence_in_list or len(indent.expandtabs(4)) <= 3)
-                ):
-                    fence = None
+            if groups and closes_fence(groups, fence, fence_in_list):
+                fence = None
             lines.append("")
-        elif match:
-            fence = match.group(3)
-            fence_in_list = bool(match.group(2))
+        elif groups:
+            fence = groups[2]
+            fence_in_list = bool(groups[1])
             lines.append("")
         elif line.lstrip().startswith((">", "|")) or HEADING.match(line):
             lines.append("")
