@@ -280,6 +280,83 @@ class TurnBoundary(unittest.TestCase):
         self.assertFalse(blocked(records))
 
 
+class Fences(unittest.TestCase):
+    def parse(self, line, fence_in_list=False):
+        return ask_gate.parse_fence(line, fence_in_list)
+
+    def closes(self, line, fence, fence_in_list=False):
+        groups = self.parse(line, fence_in_list)
+        self.assertIsNotNone(groups, line)
+        return ask_gate.closes_fence(groups, fence, fence_in_list)
+
+    def test_parse_backtick_and_tilde_runs(self):
+        self.assertEqual(self.parse("```"), ("", None, "```", ""))
+        self.assertEqual(self.parse("~~~"), ("", None, "~~~", ""))
+        self.assertEqual(self.parse("`````"), ("", None, "`````", ""))
+
+    def test_parse_info_string(self):
+        self.assertEqual(self.parse("```python"), ("", None, "```", "python"))
+        self.assertEqual(self.parse("~~~ sh"), ("", None, "~~~", " sh"))
+
+    def test_parse_rejects_short_run_and_plain_text(self):
+        self.assertIsNone(self.parse("``"))
+        self.assertIsNone(self.parse("~~"))
+        self.assertIsNone(self.parse("текст ``` текст"))
+        self.assertIsNone(self.parse(""))
+
+    def test_parse_indent_up_to_three_spaces(self):
+        self.assertEqual(self.parse("   ```")[0], "   ")
+        self.assertIsNone(self.parse("    ```"))
+        self.assertIsNone(self.parse("\t```"))
+
+    def test_parse_deep_indent_allowed_in_list(self):
+        self.assertIsNotNone(self.parse("    ```", fence_in_list=True))
+        self.assertIsNotNone(self.parse("\t~~~", fence_in_list=True))
+
+    def test_parse_list_marker(self):
+        self.assertEqual(self.parse("- ```py"), ("", "- ", "```", "py"))
+        self.assertEqual(self.parse("1. ~~~"), ("", "1. ", "~~~", ""))
+
+    def test_parse_inline_code_is_not_fence(self):
+        self.assertIsNone(self.parse("```x```"))
+        self.assertIsNone(self.parse("```x`"))
+
+    def test_parse_backtick_in_tilde_info_is_allowed(self):
+        self.assertIsNotNone(self.parse("~~~ `x`"))
+
+    def test_closes_same_character_and_length(self):
+        self.assertTrue(self.closes("```", "```"))
+        self.assertTrue(self.closes("~~~", "~~~"))
+
+    def test_closes_longer_run(self):
+        self.assertTrue(self.closes("`````", "```"))
+        self.assertTrue(self.closes("~~~~", "~~~"))
+
+    def test_does_not_close_shorter_run(self):
+        self.assertFalse(self.closes("```", "````"))
+        self.assertFalse(self.closes("~~~", "~~~~~"))
+
+    def test_does_not_close_other_character(self):
+        self.assertFalse(self.closes("~~~", "```"))
+        self.assertFalse(self.closes("```", "~~~"))
+
+    def test_does_not_close_with_info_or_list_marker(self):
+        self.assertFalse(self.closes("```python", "```"))
+        self.assertFalse(self.closes("~~~ sh", "~~~"))
+        self.assertFalse(self.closes("- ```", "```"))
+
+    def test_closes_with_trailing_spaces(self):
+        self.assertTrue(self.closes("```   ", "```"))
+
+    def test_closes_with_indent_up_to_three_spaces(self):
+        self.assertTrue(self.closes("   ```", "```"))
+
+    def test_closing_deep_indent_only_in_list(self):
+        groups = ("    ", None, "```", "")
+        self.assertFalse(ask_gate.closes_fence(groups, "```", False))
+        self.assertTrue(ask_gate.closes_fence(groups, "```", True))
+
+
 class Paragraphs(unittest.TestCase):
     def assert_question(self, value):
         self.assertIsNotNone(ask_gate.question_paragraph(value), value)
