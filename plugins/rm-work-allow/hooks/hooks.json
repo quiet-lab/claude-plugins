@@ -1,0 +1,17 @@
+{
+  "description": "При запросе разрешения на Bash: удаление внутри ~/work разрешается без вопроса",
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "exec python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/rm-work-allow.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

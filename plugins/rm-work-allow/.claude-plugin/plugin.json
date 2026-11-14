@@ -1,0 +1,6 @@
+{
+  "name": "rm-work-allow",
+  "version": "0.1.0",
+  "description": "Снимает запрос разрешения на rm и rmdir, когда все цели лежат внутри ~/work глубже каталогов первого уровня",
+  "author": { "name": "quiet-lab" }
+}

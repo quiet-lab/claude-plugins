@@ -1,7 +1,7 @@
 {
   "name": "quiet-lab",
   "owner": { "name": "quiet-lab" },
-  "metadata": { "description": "Плагины Claude Code: handoff, ask-gate и duty" },
+  "metadata": { "description": "Плагины Claude Code: handoff, ask-gate, rm-work-allow и duty" },
   "plugins": [
     {
       "name": "handoff",
@@ -12,6 +12,11 @@
       "name": "ask-gate",
       "source": "./plugins/ask-gate",
       "description": "Ворота вопросов пользователю: ход, закончившийся вопросом в прозе без AskUserQuestion, возвращается агенту один раз"
+    },
+    {
+      "name": "rm-work-allow",
+      "source": "./plugins/rm-work-allow",
+      "description": "Снимает запрос разрешения на rm и rmdir, когда все цели лежат внутри ~/work глубже каталогов первого уровня"
     },
     {
       "name": "duty",
